@@ -7,7 +7,7 @@
 <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/Temperdox/VS/main/sitelogo.png" />
 <link rel="shortcut icon" type="image/png" href="https://raw.githubusercontent.com/Temperdox/VS/main/sitelogo.png" />
 <link rel="apple-touch-icon" href="https://raw.githubusercontent.com/Temperdox/VS/main/sitelogo.png" />
-<meta property="og:title" content="Dossier — Character Card" />
+<meta property="og:title" content="Corbin Babcock — Character Card" />
 <meta property="og:image" content="https://raw.githubusercontent.com/Temperdox/VS/main/sitelogo.png" />
 <meta property="og:type" content="website" />
 <meta name="twitter:card" content="summary_large_image" />
@@ -26,14 +26,16 @@
     /* driven by JS */
     --rx:0deg;
     --ry:0deg;
+    --tx:0px;
+    --ty:0px;
+    --flip:0deg;
+    --lift:0px;
+    --lift-x:0px;
+    --lift-y:0px;
     --shine-top:.35;
     --shine-right:.35;
     --shine-bottom:.35;
     --shine-left:.35;
-    --glint-top-x:50%;
-    --glint-bot-x:50%;
-    --glint-left-y:50%;
-    --glint-right-y:50%;
     --sx:50%;
     --sy:50%;
     --shade-top-a:0;
@@ -108,25 +110,66 @@
     aspect-ratio: 5 / 7.2;
   }
 
-  /* animated conic angle — @property allows smooth CSS variable interpolation */
+  /* animated conic angle + hue shift — @property enables smooth CSS var interpolation */
   @property --angle {
     syntax: '<angle>';
     initial-value: 0deg;
     inherits: false;
   }
+  @property --hue {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+  }
+  /* --flip registered so its change can be transitioned on .card;
+     without @property, CSS can't interpolate a custom property. */
+  @property --flip {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: true;
+  }
+  /* --lift pulls the card forward (+Z toward viewer) so it separates from the
+     wall before rotating around Y, then settles back once the flip is done.
+     --lift-x/--lift-y offset the card in 2D during the lift so it drifts away
+     from the cursor (with a slight downward bias so it feels like gravity). */
+  @property --lift {
+    syntax: '<length>';
+    initial-value: 0px;
+    inherits: true;
+  }
+  @property --lift-x {
+    syntax: '<length>';
+    initial-value: 0px;
+    inherits: true;
+  }
+  @property --lift-y {
+    syntax: '<length>';
+    initial-value: 0px;
+    inherits: true;
+  }
 
-  /* rainbow aura — card-shaped, rides the card's 3D tilt, reads as a soft animated dropshadow */
+  /* pastel aura — three complementary pastel pairs (pink↔mint, peach↔sky, butter↔lavender)
+     arranged around the conic so adjacent colors blend softly and opposite colors pair up.
+     Card-shaped, rides the card's 3D tilt, rotates AND shifts in hue over time. */
   .glow{
     position:absolute;
     inset:-7%;
     border-radius:42px;
     background:conic-gradient(from var(--angle),
-      #ff7ab8, #ffd68a, #a9ff9c, #7fe6ff, #9fa9ff, #d09bff, #ff7ab8);
-    filter:blur(34px) saturate(1.2);
+      #ffc4d6,  /* pastel pink    */
+      #ffd9b8,  /* pastel peach   */
+      #fff0b8,  /* pastel butter  */
+      #c9ffd4,  /* pastel mint   — pairs with pink   */
+      #b8e1ff,  /* pastel sky    — pairs with peach  */
+      #d8c4ff,  /* pastel lavender — pairs with butter */
+      #ffc4d6);
+    filter: blur(34px) saturate(1.15) hue-rotate(var(--hue));
     opacity:.82;
-    animation: spin 11s linear infinite;
+    animation: spin 9.3s linear infinite, hueshift 14.7s ease-in-out infinite;
     z-index:0;
     pointer-events:none;
+    /* stays flat — represents the "wall" behind the card, so it only tracks
+       tilt (rx/ry) and doesn't rotate when the card flips. */
     transform: rotateX(var(--rx)) rotateY(var(--ry));
     will-change: transform, filter;
   }
@@ -135,21 +178,57 @@
     position:absolute;
     inset:4%;
     border-radius:34px;
-    background:conic-gradient(from calc(var(--angle) + 140deg),
-      #9fa9ff, #ff7ab8, #ffd68a, #a9ff9c, #7fe6ff, #9fa9ff);
-    filter:blur(14px) saturate(1.3);
+    /* offset 180° so the complements land on the opposite side of the card,
+       and hue shifts in reverse so the two layers drift relative to each other */
+    background:conic-gradient(from calc(var(--angle) + 180deg),
+      #c9ffd4, #b8e1ff, #d8c4ff, #ffc4d6, #ffd9b8, #fff0b8, #c9ffd4);
+    filter: blur(14px) saturate(1.25) hue-rotate(calc(var(--hue) * -0.7));
     opacity:.55;
     mix-blend-mode:screen;
   }
-  @keyframes spin{ to { --angle: 360deg; } }
+  @keyframes spin    { to { --angle: 360deg; } }
+  @keyframes hueshift{
+    0%, 100% { --hue: -28deg; }
+    50%      { --hue:  36deg; }
+  }
 
-  /* the card itself */
+  /* Black backdrop shadow — sits above the rainbow glow and behind the card.
+     A filled+blurred rounded rect instead of a box-shadow halo, so opacity
+     fades the entire shape as one unit with no outline residue when the card
+     lifts off the wall. Shares the card's tilt/flip transform. */
+  .card-shadow{
+    position:absolute; inset:-4px;
+    border-radius:30px;
+    z-index:1;
+    pointer-events:none;
+    background:rgba(0,0,0,.85);
+    filter:blur(28px);
+    transform: translate3d(var(--tx), var(--ty), 0) rotateX(var(--rx)) rotateY(calc(var(--ry) + var(--flip)));
+    /* opacity is driven from JS each frame (tied to liftFactor) so the shadow
+       fade is perfectly synced with the lift motion; no CSS transition needed. */
+    opacity:1;
+    transition:--flip 0.85s cubic-bezier(.4, 0, .2, 1);
+    will-change:transform, opacity;
+  }
+
+  /* the card itself — preserve-3d so children (.face, .back, .content children)
+     can live at different Z offsets and flip around the Y axis independently. */
   .card{
     position:relative; z-index:2;
     width:100%; height:100%;
+    transform-style:preserve-3d;
     transform:
+      translate3d(
+        calc(var(--tx) + var(--lift-x)),
+        calc(var(--ty) + var(--lift-y)),
+        var(--lift))
       rotateX(var(--rx))
-      rotateY(var(--ry));
+      rotateY(calc(var(--ry) + var(--flip)));
+    /* --flip is the only thing CSS animates; --lift / --lift-x / --lift-y are
+       driven from the rAF loop so the mouse-aware lift offsets can update live
+       while the flip is in progress (move the cursor mid-flip and the card
+       re-aims toward the new position rather than locking to its click-time offset). */
+    transition:--flip 0.85s cubic-bezier(.4, 0, .2, 1);
     will-change:transform;
   }
 
@@ -183,6 +262,34 @@
     width:100%; height:100%;
     display:block;
     z-index:1;
+  }
+
+  /* subsurface scattering — a warm halo centered on the virtual light (same
+     --sx/--sy the sheen uses), broken into irregular lobes by a static SVG
+     fractal-noise mask. The mask is a data URI so the browser rasterizes it
+     once and caches; only the gradient animates as the cursor moves, which
+     keeps the per-frame cost to what a plain radial-gradient costs.
+     Lives inside .face so it's clipped to the rounded card; independent of
+     the edge-lighting system. */
+  .face > .sss{
+    position:absolute; inset:0;
+    z-index:1;
+    pointer-events:none;
+    background:
+      radial-gradient(130% 160% at var(--sx) var(--sy),
+        rgba(255, 200, 168, .50) 0%,
+        rgba(255, 168, 190, .32) 22%,
+        rgba(255, 198, 170, .14) 48%,
+        transparent 72%);
+    mix-blend-mode:screen;
+    opacity:.9;
+    mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.011' numOctaves='2' seed='5' stitchTiles='stitch'/></filter><rect width='400' height='400' filter='url(%23n)'/></svg>");
+    mask-mode:luminance;
+    mask-size:100% 100%;
+    mask-repeat:no-repeat;
+    -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.011' numOctaves='2' seed='5' stitchTiles='stitch'/></filter><rect width='400' height='400' filter='url(%23n)'/></svg>");
+    -webkit-mask-size:100% 100%;
+    -webkit-mask-repeat:no-repeat;
   }
 
   /* glass gloss — subtle reflective gradient on top of the shader */
@@ -229,64 +336,24 @@
   /* counter-shade disabled — bevel frame handles the "dark side" cue now */
   .cshade{ display:none }
 
-  /* edges: four thin light stripes with a travelling glint
-     the hot spot is positioned by projecting the fixed light onto each edge's tangent */
-  .edge{
+  /* SVG rim — a single rounded-rect path stroked along the card's 26px radius,
+     filled with a radial gradient whose center tracks the sheen position.
+     Three stacked strokes of decreasing width + increasing opacity read as a
+     beveled edge (wide soft bloom, mid fade, sharp crest). Because the strokes
+     follow the rounded path, corners light up naturally whenever the sheen
+     approaches them; the gradient's falloff localizes the glow so edges stay
+     dark when the sheen is elsewhere. */
+  .rim-svg{
     position:absolute;
+    inset:0;
+    width:100%; height:100%;
     pointer-events:none;
-    border-radius:3px;
-    filter:blur(.5px);
+    overflow:visible;
     z-index:6;
   }
-  .edge::after{
-    content:"";
-    position:absolute; inset:-1px;
-    border-radius:inherit;
-    box-shadow:0 0 14px 1px rgba(255,255,255,.55);
-    opacity:.85;
-  }
-  .edge-top{
-    top:-1.5px; left:18px; right:18px; height:2px;
-    background:linear-gradient(90deg,
-      transparent 0%,
-      rgba(255,255,255,.05) calc(var(--glint-top-x,   50%) - 32%),
-      rgba(255,255,255,1.0) var(--glint-top-x,   50%),
-      rgba(255,255,255,.05) calc(var(--glint-top-x,   50%) + 32%),
-      transparent 100%);
-    opacity:var(--shine-top);
-  }
-  .edge-bottom{
-    bottom:-1.5px; left:18px; right:18px; height:2px;
-    background:linear-gradient(90deg,
-      transparent 0%,
-      rgba(255,255,255,.05) calc(var(--glint-bot-x,   50%) - 32%),
-      rgba(255,255,255,1.0) var(--glint-bot-x,   50%),
-      rgba(255,255,255,.05) calc(var(--glint-bot-x,   50%) + 32%),
-      transparent 100%);
-    opacity:var(--shine-bottom);
-  }
-  .edge-left{
-    top:18px; bottom:18px; left:-1.5px; width:2px;
-    background:linear-gradient(180deg,
-      transparent 0%,
-      rgba(255,255,255,.05) calc(var(--glint-left-y,  50%) - 32%),
-      rgba(255,255,255,1.0) var(--glint-left-y,  50%),
-      rgba(255,255,255,.05) calc(var(--glint-left-y,  50%) + 32%),
-      transparent 100%);
-    opacity:var(--shine-left);
-  }
-  .edge-right{
-    top:18px; bottom:18px; right:-1.5px; width:2px;
-    background:linear-gradient(180deg,
-      transparent 0%,
-      rgba(255,255,255,.05) calc(var(--glint-right-y, 50%) - 32%),
-      rgba(255,255,255,1.0) var(--glint-right-y, 50%),
-      rgba(255,255,255,.05) calc(var(--glint-right-y, 50%) + 32%),
-      transparent 100%);
-    opacity:var(--shine-right);
-  }
 
-  /* content column */
+  /* content column — preserve-3d lets each child live at its own Z depth
+     so the face reads as layered glass as the card tilts. */
   .content{
     position:relative;
     height:100%;
@@ -295,7 +362,23 @@
     flex-direction:column;
     gap:14px;
     z-index:3;
+    transform-style:preserve-3d;
+    backface-visibility:hidden;
+    -webkit-backface-visibility:hidden;
   }
+  .content > *{
+    backface-visibility:hidden;
+    -webkit-backface-visibility:hidden;
+  }
+  /* parallax — each content row sits slightly forward of the card face; the
+     avatar sits furthest out so it feels like it's floating above the text. */
+  .content > .row:first-of-type{ transform:translateZ(6px); }
+  .content > .avatar-wrap       { transform:translateZ(20px); }
+  .content > .name              { transform:translateZ(14px); }
+  .content > .tagline           { transform:translateZ(10px); }
+  .content > .divider           { transform:translateZ(4px); }
+  .content > .bio               { transform:translateZ(8px); }
+  .content > .meta-row          { transform:translateZ(4px); }
 
   .row{
     display:flex;
@@ -443,6 +526,114 @@
     color:rgba(255,255,255,.55);
   }
 
+  /* card back — pre-flipped 180° on Y so it faces the viewer once the card
+     itself is rotated. Same drop shadow as .face so both sides read identically. */
+  .back{
+    position:absolute; inset:0;
+    z-index:7;
+    border-radius:26px;
+    overflow:hidden;
+    /* transparent so the shader/sheen/rim on the card face show through —
+       the back only contributes its text layout, not a new backdrop. */
+    background:transparent;
+    transform:rotateY(180deg);
+    backface-visibility:hidden;
+    -webkit-backface-visibility:hidden;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+    padding:26px 28px 22px;
+    color:var(--ink);
+  }
+  .back-row{
+    display:flex;
+    justify-content:space-between;
+    font-size:9.5px;
+    letter-spacing:.28em;
+    text-transform:uppercase;
+    color:var(--ink-faint);
+  }
+  .back-stamp{ color:#9cff9a; font-size:8px; vertical-align:middle; margin-right:4px; }
+  .back-heading{
+    font-family:'Fraunces', serif;
+    font-weight:400;
+    font-size:24px;
+    letter-spacing:-.01em;
+    margin:8px 0 2px;
+  }
+  .back-list{
+    list-style:none;
+    margin:0; padding:0;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    font-size:14px;
+    line-height:1.4;
+    color:rgba(255,255,255,.78);
+  }
+  .back-list li{
+    position:relative;
+    padding-left:18px;
+  }
+  .back-list li::before{
+    content:'';
+    position:absolute;
+    left:0; top:.65em;
+    width:10px; height:1px;
+    background:rgba(255,255,255,.4);
+  }
+  .back-quote{
+    font-family:'Fraunces', serif;
+    font-style:italic;
+    font-weight:300;
+    font-size:19px;
+    text-align:center;
+    color:var(--ink-dim);
+    margin:auto 0;
+    line-height:1.3;
+  }
+  .back-foot{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    margin-top:auto;
+    padding-top:10px;
+    border-top:1px solid var(--hairline);
+  }
+  .back-qr{
+    display:block;
+    width:60px; height:60px;
+    cursor:pointer;
+    line-height:0;
+    border-radius:4px;
+    transition:transform .2s ease, filter .2s ease;
+  }
+  .back-qr img{
+    width:100%; height:100%;
+    display:block;
+    user-select:none;
+    -webkit-user-drag:none;
+  }
+  .back-qr:hover{
+    transform:scale(1.04);
+    filter:brightness(1.15);
+  }
+  .back-sig-label{
+    font-size:8.5px;
+    letter-spacing:.3em;
+    text-transform:uppercase;
+    color:var(--ink-faint);
+    text-align:right;
+  }
+  .back-sig-auth{
+    font-family:'Fraunces', serif;
+    font-style:italic;
+    font-size:12px;
+    color:var(--ink-dim);
+    text-align:right;
+    margin-top:2px;
+  }
+
   /* bottom controls */
   #file{display:none}
   .controls{
@@ -489,23 +680,44 @@
 <div class="chrome">
   <div class="tl"><strong>Dossier</strong> &nbsp;·&nbsp; Character Card</div>
   <div class="tr">Pen Testing &nbsp;·&nbsp; <strong>Assignment No. 6</strong></div>
-  <div class="bl"><span class="rule"></span><span>Hover to tilt</span></div>
+  <div class="bl"><span class="rule"></span><span>Hover to tilt &nbsp;·&nbsp; Flip to turn</span></div>
   <div class="br">Northeastern University, Spring 2026</div>
 </div>
 
 <div class="arena">
   <div class="stage" id="stage">
     <div class="glow"></div>
+    <div class="card-shadow"></div>
 
     <div class="card" id="card">
-      <div class="face"><canvas class="shader-canvas" id="faceShader"></canvas></div>
+      <div class="face">
+        <canvas class="shader-canvas" id="faceShader"></canvas>
+        <div class="sss"></div>
+      </div>
       <div class="sheen"></div>
       <div class="cshade"></div>
 
-      <div class="edge edge-top"></div>
-      <div class="edge edge-bottom"></div>
-      <div class="edge edge-left"></div>
-      <div class="edge edge-right"></div>
+      <svg class="rim-svg" aria-hidden="true" focusable="false">
+        <defs>
+          <radialGradient id="rimLight" cx="50%" cy="50%" r="55%">
+            <!-- color interpolation (no alpha stops) — black far from the sheen,
+                 white at it. All stops are opaque so there's no transparency
+                 cutoff creating a visible clip ring at the gradient's edge;
+                 the rim color simply transitions smoothly across the card. -->
+            <stop offset="0"    stop-color="#fff"/>
+            <stop offset=".18"  stop-color="#8c8c8c"/>
+            <stop offset=".42"  stop-color="#1f1f1f"/>
+            <stop offset=".62"  stop-color="#000"/>
+          </radialGradient>
+        </defs>
+        <!-- stacked strokes: widest soft bloom, mid fade, sharp crest on top -->
+        <rect width="100%" height="100%" rx="26" ry="26" fill="none"
+              stroke="url(#rimLight)" stroke-width="7" opacity=".14"/>
+        <rect width="100%" height="100%" rx="26" ry="26" fill="none"
+              stroke="url(#rimLight)" stroke-width="3" opacity=".287"/>
+        <rect width="100%" height="100%" rx="26" ry="26" fill="none"
+              stroke="url(#rimLight)" stroke-width="1.2" opacity=".638"/>
+      </svg>
 
       <div class="content">
         <div class="row">
@@ -530,8 +742,41 @@
           <span class="serial">No. 001 / 001</span>
         </div>
       </div>
+
+      <div class="back">
+        <div class="back-row">
+          <span><span class="back-stamp">◉</span>Verified</span>
+          <span>Reverse</span>
+        </div>
+
+        <h2 class="back-heading">Competencies</h2>
+
+        <ul class="back-list">
+          <li>Web application penetration testing</li>
+          <li>Full-stack software development</li>
+          <li>Network &amp; system security</li>
+          <li>WebGL &amp; shader programming</li>
+        </ul>
+
+        <div class="back-quote">&ldquo;Measure twice,<br>exploit once.&rdquo;</div>
+
+        <div class="back-foot">
+          <a class="back-qr" href="https://www.linkedin.com/in/corbinbabcock/?skipRedirect=true"
+             target="_blank" rel="noopener noreferrer" aria-label="LinkedIn profile">
+            <img src="qr_code.svg" alt="" width="60" height="60"/>
+          </a>
+          <div>
+            <div class="back-sig-label">Issued by</div>
+            <div class="back-sig-auth">Northeastern University</div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
+</div>
+
+<div class="controls">
+  <button class="btn" id="flipBtn" type="button">Flip</button>
 </div>
 
 
@@ -764,8 +1009,10 @@
   window.addEventListener('pointermove', (e) => {
     if (!cardEl) return;
     const r = cardEl.getBoundingClientRect();
-    mx = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-    my = Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height));
+    // Inverted so the shader's mouse-driven warp/glow sits diametrically opposite
+    // the cursor, matching the sheen/rim hotspot position.
+    mx = Math.max(0, Math.min(1, 1 - (e.clientX - r.left) / r.width));
+    my = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
   }, { passive: true });
 
   const start = performance.now();
@@ -804,15 +1051,9 @@
     right:  [ cb, 0,   sb],
   };
 
-  // Tangents along each edge (in local card space, CSS coords with Y-down).
-  // Used to project the fixed light onto the edge so a "glint" slides along it.
-  const TANGENTS = {
-    top:    [ 1, 0, 0],
-    bottom: [ 1, 0, 0],
-    left:   [ 0, 1, 0],
-    right:  [ 0, 1, 0],
-  };
-  const GLINT_VAR = { top:'--glint-top-x', bottom:'--glint-bot-x', left:'--glint-left-y', right:'--glint-right-y' };
+  // SVG rim gradient — we retarget its center each frame so the stroked
+  // rounded-rect path lights only where the sheen is near.
+  const rimGradient = document.getElementById('rimLight');
 
   function normalize(v){
     const m = Math.hypot(v[0], v[1], v[2]) || 1;
@@ -837,7 +1078,20 @@
     return [x2, y2, z2];
   }
 
-  const MAX_TILT = 28; // degrees — dramatic enough that perspective deformation reads as rotation
+  const MAX_TILT  = 28; // degrees — dramatic enough that perspective deformation reads as rotation
+  const MAX_SHIFT = 22; // px — card slides opposite the cursor so it reads as being physically nudged
+  const LIFT_Z        = 70; // px — how far the card rises off the wall during a flip
+  const LIFT_SHIFT_X  = 28; // px — max horizontal drift during the lift (mouse-driven)
+  const LIFT_SHIFT_Y  = 38; // px — max vertical drift during the lift (mouse-driven)
+  const LIFT_BIAS_Y   = 14; // px — constant downward bias so the lift reads as gravity
+  // Flipped to true once the card rotation passes 90° on its way to the back so
+  // the sheen/rim hotspot gets mirrored on X (the face we're looking at is a
+  // mirror of the front when the card is rotated 180°).
+  let mirrorX = false;
+  // liftFactor eases 0 → 1 during lift-up, stays at 1 through the flip, eases
+  // back to 0 on settle. Driven by liftFactorTarget, which doFlip toggles.
+  let liftFactor = 0, liftFactorTarget = 0;
+  const cardShadowEl = document.querySelector('.card-shadow');
   let targetRx = 0, targetRy = 0;
   let curRx = 0, curRy = 0;
   let mouseNX = 0, mouseNY = 0;   // normalized mouse over stage (-1..1), used for sheen
@@ -860,20 +1114,14 @@
     const lvm = Math.hypot(lvx, lvy, lvz) || 1;
     const light = [lvx / lvm, lvy / lvm, lvz / lvm];
 
-    // Edge specular: dot(rotated edge normal, virtual light)
+    // Inner-bevel shine (drives the .face inset highlight on each side).
+    // Kept as the old directional dot so the subtle inner bevel still breathes
+    // with the tilt; the visible rim itself is handled by the SVG path below.
     for (const key in EDGES){
       const wn = rotateVec(EDGES[key], rxR, ryR);
       const lit = Math.max(0, dot(wn, light));
-      // higher baseline so the rim always reads; bright peak for clear lit side
       const shine = 0.18 + 0.82 * Math.pow(lit, 2.0);
       root.style.setProperty(`--shine-${key}`, shine.toFixed(3));
-
-      // Glint position: project the virtual light onto the edge's rotated tangent →
-      // the hot spot slides along the edge as the cursor moves.
-      const wt = rotateVec(TANGENTS[key], rxR, ryR);
-      const proj = dot(light, wt); // -1..1
-      const pct = Math.max(8, Math.min(92, 50 + proj * 42));
-      root.style.setProperty(GLINT_VAR[key], pct.toFixed(2) + '%');
     }
 
     // Directional face shade — darkens the side of the card that's RECEDING from view.
@@ -893,12 +1141,44 @@
     root.style.setProperty('--shade-left-a',  leftA.toFixed(3));
     root.style.setProperty('--shade-right-a', rightA.toFixed(3));
 
-    // Sheen — diametrically opposed to the cursor's position on the stage.
-    // (curMX/curMY already smoothed at the top of this function.)
-    const sx = 50 - curMX * 55;
-    const sy = 50 - curMY * 55;
+    // Sheen — diametrically opposed to the cursor. When the card is flipped,
+    // the face we're looking at is mirrored on X, so mirror the hotspot too or
+    // it lands on the same-side as the cursor instead of the opposite side.
+    const sxRaw = 50 - curMX * 55;
+    const sy   = 50 - curMY * 55;
+    const sx = mirrorX ? (100 - sxRaw) : sxRaw;
     root.style.setProperty('--sx', `${sx.toFixed(2)}%`);
     root.style.setProperty('--sy', `${sy.toFixed(2)}%`);
+
+    // Point the SVG rim's radial gradient at the sheen so the rounded-rect
+    // stroke only lights up where the hotspot is near the card's perimeter.
+    if (rimGradient){
+      rimGradient.setAttribute('cx', sx.toFixed(2) + '%');
+      rimGradient.setAttribute('cy', sy.toFixed(2) + '%');
+    }
+
+    // Counter-translation — card slides toward the cursor so the perspective
+    // foreshortening reads as the card being pushed + tilted, not just skewed in place.
+    const tx = curMX * MAX_SHIFT;
+    const ty = curMY * MAX_SHIFT;
+    root.style.setProperty('--tx', tx.toFixed(2) + 'px');
+    root.style.setProperty('--ty', ty.toFixed(2) + 'px');
+
+    // Lift — ease liftFactor toward its target, then derive the lift Z offset
+    // and the 2D drift from the CURRENT smoothed cursor position. Because this
+    // runs every frame, moving the mouse mid-flip re-aims the lift live. The
+    // contact shadow opacity is just (1 - liftFactor) so the fade perfectly
+    // tracks the lift motion with no CSS-transition lag.
+    liftFactor += (liftFactorTarget - liftFactor) * 0.20;
+    const liftX = curMX * LIFT_SHIFT_X * liftFactor;
+    // Upward lift (mouse above center, curMY < 0) scales 1.5× so the card
+    // rises more dramatically when pulled up than it drops when pushed down.
+    const liftYShift = curMY * LIFT_SHIFT_Y * (curMY < 0 ? 1.5 : 1.0);
+    const liftY = (liftYShift + LIFT_BIAS_Y) * liftFactor;
+    root.style.setProperty('--lift',   (liftFactor * LIFT_Z).toFixed(2) + 'px');
+    root.style.setProperty('--lift-x', liftX.toFixed(2) + 'px');
+    root.style.setProperty('--lift-y', liftY.toFixed(2) + 'px');
+    if (cardShadowEl) cardShadowEl.style.opacity = (1 - liftFactor).toFixed(3);
   }
 
   function onPointerMove(e){
@@ -950,6 +1230,54 @@
   applyLighting();
   requestAnimationFrame(tick);
   requestAnimationFrame(introduce);
+
+  // Flip — the card and the button both trigger the same toggle. --flip moves
+  // between 0deg and 180deg so the card rotates around Y; the sheen mirror is
+  // toggled ~halfway through the 0.85s transition (when the card is edge-on
+  // and invisible) so the hotspot snap is imperceptible.
+  const flipBtn = document.getElementById('flipBtn');
+  const cardEl  = document.getElementById('card');
+  let flipped = false;
+  let flipTimerStart = 0, flipTimerMid = 0, flipTimerEnd = 0;
+  const LIFT_MS = 220;
+  const FLIP_MS = 850;
+
+  function doFlip(){
+    flipped = !flipped;
+    if (flipBtn) flipBtn.textContent = flipped ? 'Front' : 'Flip';
+    clearTimeout(flipTimerStart);
+    clearTimeout(flipTimerMid);
+    clearTimeout(flipTimerEnd);
+
+    // 1. Raise the lift-factor target — the rAF loop eases liftFactor toward
+    //    it and derives --lift/--lift-x/--lift-y from the current mouse pos.
+    //    The contact-shadow opacity is driven from the same liftFactor, so it
+    //    fades in lockstep with the lift motion.
+    liftFactorTarget = 1;
+
+    // 2. Once the lift is seated, start the rotation.
+    flipTimerStart = setTimeout(() => {
+      root.style.setProperty('--flip', flipped ? '180deg' : '0deg');
+    }, LIFT_MS);
+
+    // 3. At the flip's midpoint (card edge-on), swap the sheen/rim X mirror
+    //    so the hotspot stays diametrically opposite the cursor on the back.
+    flipTimerMid = setTimeout(() => { mirrorX = flipped; }, LIFT_MS + FLIP_MS / 2);
+
+    // 4. After the flip completes, drop the lift target — the rAF loop eases
+    //    liftFactor back to 0, taking the shadow opacity back to 1 with it.
+    flipTimerEnd = setTimeout(() => {
+      liftFactorTarget = 0;
+    }, LIFT_MS + FLIP_MS);
+  }
+
+  if (flipBtn) flipBtn.addEventListener('click', doFlip);
+  if (cardEl)  cardEl.addEventListener('click', doFlip);
+
+  // The QR link is inside the card, so a click on it would also bubble up and
+  // trigger a flip. Stop propagation so clicking it only opens LinkedIn.
+  const qrEl = document.querySelector('.back-qr');
+  if (qrEl) qrEl.addEventListener('click', (e) => e.stopPropagation());
 })();
 </script>
 </body>
